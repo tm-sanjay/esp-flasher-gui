@@ -51,42 +51,69 @@ def prevent_print(func, *args, **kwargs):
         pass
 
 
-def esptool_read_mac():
-    # esptool.main(argv)
-    chip = detect_chip(main_port)
+def esptool_read_mac(port):
+    chip = detect_chip(port)
     mac_address = (':'.join('{:02X}'.format(x) for x in read_chip_property(chip.read_mac)))
     print(f'MAC - {mac_address}')
     return mac_address
 
 
 class EspToolThread(threading.Thread):
-    def __init__(self, parent):
+    def __init__(self, parent, config, txt_ctrl):
         threading.Thread.__init__(self)
+        self.txt_ctrl = txt_ctrl
+        # to exit when main thread exits
         self.daemon = True
-        self._parent = parent
+        # self._parent = parent
+        self._config = config
         self.mac = None
 
     def run(self):
         try:
-            argv = ["read_mac"]
-            # print(command)
-            global mac
-            mac = esptool_read_mac()
+            # self.read_mac()
+            argv = ["--port", self._config.port]
+            argv.extend(['--baud', str(self._config.baud)])
+            argv.extend(['--after', 'hard_reset', 'write_flash'])
+            argv.extend(["--flash_size", "detect",
+                         "--flash_mode", self._config.mode,
+                         "0x00000", self._config.firmware_path])
+
+            if self._config.erase_flash:
+                argv.append('--erase-all')
+            print(argv)
+            print("Command: esptool.py %s\n" % " ".join(argv))
+
+            esptool.main(argv)
+
         except Exception as e:
             print("Unexpected error: {}".format(e))
-            raise
+            raise e
+
+    def read_mac(self):
+        # read mac and update to UI
+        self.mac = esptool_read_mac(self._config.port)
+        wx.CallAfter(self.txt_ctrl.SetValue, self.mac)
+
+
+class FlashConfig:
+    def __init__(self):
+        self.baud = 921600
+        self.port = None
+        self.firmware_path = None
+        self.mode = 'dio'
+        self.erase_flash = False
+
+    @classmethod
+    def load(cls):
+        conf = cls()
+        return conf
 
 
 class MyPanel(wx.Panel):
     def __init__(self, parent):
         super(MyPanel, self).__init__(parent)
 
-        # add in config class
-        self.mac = None
-        self.baud = 115200
-        self.port = None
-        self.firmware_path = ""
-        self.eraseFlash = False
+        self._config = FlashConfig.load()
 
         # labels
         port_label = wx.StaticText(self, label='Serial Port')
@@ -127,61 +154,59 @@ class MyPanel(wx.Panel):
         read_mac_button = wx.Button(self, label="Read MAC")
         read_mac_button.Bind(wx.EVT_BUTTON, self.on_read_mac)
 
-        self.mac_label = wx.TextCtrl(self, value='MAC address', style=wx.TE_READONLY)
+        self.mac_text_ctrl = wx.TextCtrl(self, value='MAC address', style=wx.TE_READONLY)
         empty_label = wx.StaticText(self, label='')
 
         flex_grid.AddMany([port_label, (serial_boxsizer, 1, wx.EXPAND),
-                          file_label, (file_picker, 1, wx.EXPAND),
-                          erase_label, (erase_boxsizer, 1, wx.EXPAND),
-                          (read_mac_button, 1, wx.EXPAND), (self.mac_label, 1, wx.EXPAND),
-                          (empty_label, 1, wx.EXPAND), (upload_button, 1, wx.EXPAND)])
+                           file_label, (file_picker, 1, wx.EXPAND),
+                           erase_label, (erase_boxsizer, 1, wx.EXPAND),
+                           (read_mac_button, 1, wx.EXPAND), (self.mac_text_ctrl, 1, wx.EXPAND),
+                           (empty_label, 1, wx.EXPAND), (upload_button, 1, wx.EXPAND)])
         flex_grid.AddGrowableRow(5, 1)
         flex_grid.AddGrowableCol(1, 1)
 
         hbox.Add(flex_grid, proportion=2, flag=wx.ALL | wx.EXPAND, border=15)
         self.SetSizer(hbox)
 
-    def on_read_mac(self, event):
+    def on_read_mac(self, event=None):
         print('Reading MAC')
-        worker = EspToolThread(self)
-        worker.start()
-        worker.join()
-        # global mac
-        self.mac = mac
-        self.mac_label.SetValue(mac)
+        self.mac_text_ctrl.SetValue("")
+        mac_add = esptool_read_mac(self._config.port)
+        self.mac_text_ctrl.SetValue(mac_add)
 
     def on_upload(self, event):
-        if self.port is None:
+        if self._config.port is None:
             print("no port selected")
             wx.MessageBox("No Port Selected !", caption="Select Port", style=wx.OK | wx.ICON_ERROR)
-        elif self.firmware_path == "":
+        elif self._config.firmware_path == "":
             print('no file is selected')
             wx.MessageBox("No file is selected !", caption="Select Firmware", style=wx.OK | wx.ICON_ERROR)
         else:
             print('Uploading...')
-            print(self.port + ', ' + str(self.baud) + ", " + self.firmware_path)
-            print('Erase flash = ' + str(self.eraseFlash))
+            print(self._config.port + ', ' + str(self._config.baud) + ", " + self._config.firmware_path)
+            print('Erase flash = ' + str(self._config.erase_flash))
+            self.on_read_mac()
+            worker = EspToolThread(self, self._config, self.mac_text_ctrl)
+            worker.start()
 
     def on_erase_change(self, event):
         rb = event.GetEventObject()
 
         if rb.GetLabel() == 'Yes':
-            self.eraseFlash = True
+            self._config.erase_flash = True
         else:
-            self.eraseFlash = False
+            self._config.erase_flash = False
 
-        print('erase: ' + str(self.eraseFlash))
+        print('erase: ' + str(self._config.erase_flash))
 
     def on_pick_file(self, event):
-        self.firmware_path = event.GetPath().replace("'", "")
-        print('Firmware path: ' + self.firmware_path)
+        self._config.firmware_path = event.GetPath().replace("'", "")
+        print('Firmware path: ' + self._config.firmware_path)
 
     def on_select_port(self, event):
         choice = event.GetEventObject()
-        self.port = choice.GetString(choice.GetSelection())
-        global main_port
-        main_port = self.port
-        print("Port: " + self.port)
+        self._config.port = choice.GetString(choice.GetSelection())
+        print("Port: " + self._config.port)
 
     def on_reload(self, event):
         print('port reload')

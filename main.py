@@ -1,3 +1,4 @@
+import json
 import wx
 import esptool
 import threading
@@ -101,25 +102,46 @@ class FlashConfig:
         self.port = None
         self.firmware_path = None
         self.mode = 'dio'
-        self.erase_flash = False
+        self.erase_flash = 'No'
 
     @classmethod
-    def load(cls):
+    def load(cls, file_path):
+        print(file_path)
         conf = cls()
+        if os.path.exists(file_path):
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+            conf.port = data['port']
+            conf.baud = data['baud']
+            conf.mode = data['mode']
+            conf.erase_flash = data['erase']
         return conf
 
+    def save(self, file_path):
+        print(file_path)
+        date = {
+            'baud': self.baud,
+            'port': self.port,
+            'mode': self.mode,
+            'erase': self.erase_flash
+        }
+        with open(file_path, 'w') as f:
+            json.dump(date, f)
+
+
+#
+# --------------------------------------------------
+# GUI
 
 class MyPanel(wx.Panel):
     def __init__(self, parent):
         super(MyPanel, self).__init__(parent)
 
-        self._config = FlashConfig.load()
+        self._config = FlashConfig.load(get_config_file_path())
 
         # labels
         port_label = wx.StaticText(self, label='Serial Port')
         file_label = wx.StaticText(self, label='Firmware file')
-        # baud_label = wx.StaticText(self, label = 'Baud rate')
-        erase_label = wx.StaticText(self, label='Erase Flash')
 
         hbox = wx.BoxSizer(wx.HORIZONTAL)
 
@@ -140,14 +162,6 @@ class MyPanel(wx.Panel):
         file_picker = wx.FilePickerCtrl(self, style=wx.FLP_USE_TEXTCTRL)
         file_picker.Bind(wx.EVT_FILEPICKER_CHANGED, self.on_pick_file)
 
-        erase_no_button = wx.RadioButton(self, label='No', style=wx.RB_GROUP)
-        erase_yes_button = wx.RadioButton(self, label='Yes')
-        self.Bind(wx.EVT_RADIOBUTTON, self.on_erase_change)
-
-        erase_boxsizer = wx.BoxSizer(wx.HORIZONTAL)
-        erase_boxsizer.Add(erase_no_button)
-        erase_boxsizer.Add(erase_yes_button)
-
         upload_button = wx.Button(self, label="Upload Firmware")
         upload_button.Bind(wx.EVT_BUTTON, self.on_upload)
 
@@ -159,7 +173,6 @@ class MyPanel(wx.Panel):
 
         flex_grid.AddMany([port_label, (serial_boxsizer, 1, wx.EXPAND),
                            file_label, (file_picker, 1, wx.EXPAND),
-                           erase_label, (erase_boxsizer, 1, wx.EXPAND),
                            (read_mac_button, 1, wx.EXPAND), (self.mac_text_ctrl, 1, wx.EXPAND),
                            (empty_label, 1, wx.EXPAND), (upload_button, 1, wx.EXPAND)])
         flex_grid.AddGrowableRow(5, 1)
@@ -170,9 +183,15 @@ class MyPanel(wx.Panel):
 
     def on_read_mac(self, event=None):
         print('Reading MAC')
-        self.mac_text_ctrl.SetValue("")
-        mac_add = esptool_read_mac(self._config.port)
-        self.mac_text_ctrl.SetValue(mac_add)
+        if self._config.port is None:
+            print("no port selected")
+            wx.MessageBox("No Port Selected !", caption="Select Port", style=wx.OK | wx.ICON_ERROR)
+        else:
+            self.mac_text_ctrl.SetValue("")
+            mac_add = esptool_read_mac(self._config.port)
+            self.mac_text_ctrl.SetValue(mac_add)
+            # wx.MessageBox("Please reconnect the device or restart the App !", caption="Reconnect", style=wx.OK |
+            # wx.ICON_WARNING)
 
     def on_upload(self, event):
         if self._config.port is None:
@@ -184,20 +203,9 @@ class MyPanel(wx.Panel):
         else:
             print('Uploading...')
             print(self._config.port + ', ' + str(self._config.baud) + ", " + self._config.firmware_path)
-            print('Erase flash = ' + str(self._config.erase_flash))
             self.on_read_mac()
             worker = EspToolThread(self, self._config, self.mac_text_ctrl)
             worker.start()
-
-    def on_erase_change(self, event):
-        rb = event.GetEventObject()
-
-        if rb.GetLabel() == 'Yes':
-            self._config.erase_flash = True
-        else:
-            self._config.erase_flash = False
-
-        print('erase: ' + str(self._config.erase_flash))
 
     def on_pick_file(self, event):
         self._config.firmware_path = event.GetPath().replace("'", "")
@@ -220,12 +228,139 @@ class MyPanel(wx.Panel):
         return ports
 
 
+class SettingsTab(wx.Panel):
+    def __init__(self, parent):
+        wx.Panel.__init__(self, parent)
+
+        self._config = FlashConfig.load(get_config_file_path())
+
+        hbox = wx.BoxSizer(wx.HORIZONTAL)
+
+        flex_grid = wx.FlexGridSizer(6, 1, 10, 10)
+
+        # radio box for baud-rate selection
+        baud_rate_list = ['9600', '57600', '74880', '115200', '230400', '460800', '921600']
+        baud_box = wx.RadioBox()
+        baud_box.Create(self, label='Baud Rate', choices=baud_rate_list,
+                        majorDimension=1, style=wx.RA_SPECIFY_ROWS)
+        b_index = baud_rate_list.index(self._config.baud)
+        # default value
+        baud_box.SetSelection(b_index)
+        baud_box.Bind(wx.EVT_RADIOBOX, self.on_baud_rate)
+
+        # radio box for mode selection
+        mode_list = ['qio', 'dio', 'dout']
+        mode_box = wx.RadioBox()
+        mode_box.Create(self, label='Mode', choices=mode_list,
+                        majorDimension=1, style=wx.RA_SPECIFY_ROWS)
+        m_index = mode_list.index(self._config.mode)
+        # default value
+        mode_box.SetSelection(m_index)
+        mode_box.Bind(wx.EVT_RADIOBOX, self.on_mode)
+
+        save_button = wx.Button(self, label='Save')
+        save_button.Bind(wx.EVT_BUTTON, self.on_save)
+
+        # radio box for erasing flash
+        erase_list = ['No', 'Yes']
+        erase_box = wx.RadioBox()
+        erase_box.Create(self, label='Erase Flash', choices=erase_list,
+                         majorDimension=1, style=wx.RA_SPECIFY_ROWS)
+        e_index = erase_list.index(self._config.erase_flash)
+        # default value
+        erase_box.SetSelection(e_index)
+        erase_box.Bind(wx.EVT_RADIOBOX, self.on_erase)
+
+        box1 = wx.BoxSizer(wx.HORIZONTAL)
+        box1.Add(erase_box, flag=wx.RIGHT, border=10)
+        box1.Add(mode_box, flag=wx.LEFT, border=10)
+
+        flex_grid.AddMany([baud_box,
+                           (box1, 1, wx.EXPAND),
+                           save_button])
+        flex_grid.AddGrowableRow(5, 1)
+        flex_grid.AddGrowableCol(0, 1)
+
+        hbox.Add(flex_grid, proportion=2, flag=wx.ALL | wx.EXPAND, border=15)
+        self.SetSizer(hbox)
+
+    def on_baud_rate(self, event):
+        br = event.GetEventObject()
+        print('On Baud Rate')
+        self._config.baud = br.GetStringSelection()
+        print(self._config.baud)
+
+    def on_mode(self, event):
+        m = event.GetEventObject()
+        print('On Mode')
+        self._config.mode = m.GetStringSelection()
+        print(self._config.mode)
+
+    def on_erase(self, event):
+        e = event.GetEventObject()
+        self._config.erase_flash = e.GetStringSelection()
+        print('erase: ' + str(self._config.erase_flash))
+
+    def on_save(self, event):
+        print(f'mode:{self._config.mode}, baud rate:{self._config.baud},'
+              f'erase:{self._config.erase_flash}')
+        self._config.save(get_config_file_path())
+
+
+class ExelTab(wx.Panel):
+    def __init__(self, parent):
+        wx.Panel.__init__(self, parent)
+
+        wx.StaticText(self, -1, "This is the Exel Tab", (20, 20))
+
+
 class EspFlasher(wx.Frame):
     def __init__(self, parent, title):
         super(EspFlasher, self).__init__(parent, title=title, size=(500, 400))
         # style=wx.DEFAULT_FRAME_STYLE | wx.NO_FULL_REPAINT_ON_RESIZE
         self.locale = wx.Locale(wx.LANGUAGE_ENGLISH)
-        self.panel = MyPanel(self)
+
+        notebook = wx.Notebook(self)
+
+        tab1 = MyPanel(notebook)
+        tab2 = SettingsTab(notebook)
+        tab3 = ExelTab(notebook)
+
+        notebook.AddPage(tab1, "Main")
+        notebook.AddPage(tab2, "Settings")
+        notebook.AddPage(tab3, "Exel")
+
+        # self.panel = MyPanel(self)
+        # self._menu_bar()
+
+    def _menu_bar(self):
+        self.menuBar = wx.MenuBar()
+
+        # File menu
+        fileMenu = wx.Menu()
+        item = fileMenu.Append(wx.ID_EXIT, '&Quit\tCtrl+Q')
+
+        self.menuBar.Append(fileMenu, "&File")
+        self.Bind(wx.EVT_MENU, self._on_exit, item)
+        self.SetMenuBar(self.menuBar)
+
+        # Settings menu
+        settings = wx.Menu()
+        item = settings.Append(wx.ID_NEW, 'Edit')
+
+        self.menuBar.Append(settings, "&Settings")
+        self.Bind(wx.EVT_MENU, self._on_settings, item)
+        self.SetMenuBar(self.menuBar)
+
+    def _on_exit(self, event):
+        self.Close()
+
+    def _on_settings(self, event):
+        self.Close()
+
+
+def get_config_file_path():
+    return wx.StandardPaths.Get().GetUserConfigDir() + "/esp-flasher-gui.json"
 
 
 class MyApp(wx.App):

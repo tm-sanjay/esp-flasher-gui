@@ -272,11 +272,11 @@ class SettingsTab(wx.Panel):
         self._config.save(get_config_file_path())
 
 
-class ExelTab(wx.Panel):
+class ExeclTab(wx.Panel):
     def __init__(self, parent):
         wx.Panel.__init__(self, parent)
         self.file_path = ""
-        # wx.StaticText(self, -1, "This is the Exel Tab", (20, 20))
+        # wx.StaticText(self, -1, "This is the Execl Tab", (20, 20))
 
         dir_picker = wx.DirPickerCtrl(self, style=wx.FLP_USE_TEXTCTRL)
         dir_picker.Bind(wx.EVT_DIRPICKER_CHANGED, self.on_pick_dir)
@@ -304,11 +304,11 @@ class EspFlasher(wx.Frame):
 
         tab1 = MyPanel(notebook)
         tab2 = SettingsTab(notebook)
-        tab3 = ExelTab(notebook)
+        tab3 = ExeclTab(notebook)
 
         notebook.AddPage(tab1, "Main")
         notebook.AddPage(tab2, "Settings")
-        notebook.AddPage(tab3, "Exel")
+        notebook.AddPage(tab3, "Execl")
 
         # self.panel = MyPanel(self)
         # self._menu_bar()

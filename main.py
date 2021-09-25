@@ -1,18 +1,16 @@
-import json
 import wx
 import esptool
 import threading
 import serial
 import sys
 import os
+from config_file import FlashConfig, get_config_file_path
 from serial.tools import list_ports
 
 DEVNULL = open(os.devnull, 'w')
 
-__version__ = "0.0.1"
-
-main_port = None
-mac = None
+__version__ = "0.0.3"
+__auto_select__ = "Auto-select"
 
 
 class Espflasher(Exception):
@@ -94,39 +92,6 @@ class EspToolThread(threading.Thread):
         # read mac and update to UI
         self.mac = esptool_read_mac(self._config.port)
         wx.CallAfter(self.txt_ctrl.SetValue, self.mac)
-
-
-class FlashConfig:
-    def __init__(self):
-        self.baud = 921600
-        self.port = None
-        self.firmware_path = None
-        self.mode = 'dio'
-        self.erase_flash = 'No'
-
-    @classmethod
-    def load(cls, file_path):
-        print(file_path)
-        conf = cls()
-        if os.path.exists(file_path):
-            with open(file_path, 'r') as f:
-                data = json.load(f)
-            conf.port = data['port']
-            conf.baud = data['baud']
-            conf.mode = data['mode']
-            conf.erase_flash = data['erase']
-        return conf
-
-    def save(self, file_path):
-        print(file_path)
-        date = {
-            'baud': self.baud,
-            'port': self.port,
-            'mode': self.mode,
-            'erase': self.erase_flash
-        }
-        with open(file_path, 'w') as f:
-            json.dump(date, f)
 
 
 #
@@ -222,7 +187,7 @@ class MyPanel(wx.Panel):
 
     @staticmethod
     def _get_serial_ports():
-        ports = ["com1", "com2"]
+        ports = [__auto_select__]
         for port, desc, hwid in sorted(list_ports.comports()):
             ports.append(port)
         return ports
@@ -310,8 +275,23 @@ class SettingsTab(wx.Panel):
 class ExelTab(wx.Panel):
     def __init__(self, parent):
         wx.Panel.__init__(self, parent)
+        self.file_path = ""
+        # wx.StaticText(self, -1, "This is the Exel Tab", (20, 20))
 
-        wx.StaticText(self, -1, "This is the Exel Tab", (20, 20))
+        dir_picker = wx.DirPickerCtrl(self, style=wx.FLP_USE_TEXTCTRL)
+        dir_picker.Bind(wx.EVT_DIRPICKER_CHANGED, self.on_pick_dir)
+
+        bt = wx.Button(self, label="press", pos=(20, 30))
+        bt.Bind(wx.EVT_BUTTON, self.on_press)
+
+    def on_press(self, event):
+        print(self.file_path)
+        # from to_excel import Excel
+        # Excel().print_path(self.file_path)
+
+    def on_pick_dir(self, event):
+        self.file_path = event.GetPath()
+        print(f'path: {self.file_path}')
 
 
 class EspFlasher(wx.Frame):
@@ -357,10 +337,6 @@ class EspFlasher(wx.Frame):
 
     def _on_settings(self, event):
         self.Close()
-
-
-def get_config_file_path():
-    return wx.StandardPaths.Get().GetUserConfigDir() + "/esp-flasher-gui.json"
 
 
 class MyApp(wx.App):

@@ -3,6 +3,10 @@ import wx
 import os
 
 
+def get_config_file_path():
+    return wx.StandardPaths.Get().GetUserConfigDir() + "/esp-flasher-gui.json"
+
+
 class FlashConfig:
     def __init__(self):
         self.baud = 921600
@@ -12,7 +16,8 @@ class FlashConfig:
         self.erase_flash = 'No'
 
     @classmethod
-    def load(cls, file_path):
+    def load(cls):
+        file_path = get_config_file_path()
         print(file_path)
         conf = cls()
         if os.path.exists(file_path):
@@ -24,7 +29,8 @@ class FlashConfig:
             conf.erase_flash = data['erase']
         return conf
 
-    def save(self, file_path):
+    def save(self):
+        file_path = get_config_file_path()
         print(file_path)
         date = {
             'baud': self.baud,
@@ -35,6 +41,3 @@ class FlashConfig:
         with open(file_path, 'w') as f:
             json.dump(date, f)
 
-
-def get_config_file_path():
-    return wx.StandardPaths.Get().GetUserConfigDir() + "/esp-flasher-gui.json"

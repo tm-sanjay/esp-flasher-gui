@@ -4,7 +4,7 @@ import threading
 import serial
 import sys
 import os
-from config_file import FlashConfig, get_config_file_path
+from config_file import FlashConfig
 from serial.tools import list_ports
 
 DEVNULL = open(os.devnull, 'w')
@@ -102,7 +102,7 @@ class MyPanel(wx.Panel):
     def __init__(self, parent):
         super(MyPanel, self).__init__(parent)
 
-        self._config = FlashConfig.load(get_config_file_path())
+        self._config = FlashConfig.load()
 
         # labels
         port_label = wx.StaticText(self, label='Serial Port')
@@ -197,7 +197,7 @@ class SettingsTab(wx.Panel):
     def __init__(self, parent):
         wx.Panel.__init__(self, parent)
 
-        self._config = FlashConfig.load(get_config_file_path())
+        self._config = FlashConfig.load()
 
         hbox = wx.BoxSizer(wx.HORIZONTAL)
 
@@ -269,25 +269,36 @@ class SettingsTab(wx.Panel):
     def on_save(self, event):
         print(f'mode:{self._config.mode}, baud rate:{self._config.baud},'
               f'erase:{self._config.erase_flash}')
-        self._config.save(get_config_file_path())
+        self._config.save()
 
 
 class ExeclTab(wx.Panel):
     def __init__(self, parent):
         wx.Panel.__init__(self, parent)
         self.file_path = ""
-        # wx.StaticText(self, -1, "This is the Execl Tab", (20, 20))
 
+        hbox = wx.BoxSizer(wx.HORIZONTAL)
+
+        flex_grid = wx.FlexGridSizer(6, 2, 10, 10)
+
+        save_to_label = wx.StaticText(self, label="File Destination")
         dir_picker = wx.DirPickerCtrl(self, style=wx.FLP_USE_TEXTCTRL)
         dir_picker.Bind(wx.EVT_DIRPICKER_CHANGED, self.on_pick_dir)
 
-        bt = wx.Button(self, label="press", pos=(20, 30))
-        bt.Bind(wx.EVT_BUTTON, self.on_press)
+        save_button = wx.Button(self, label="press", pos=(20, 30))
+        save_button.Bind(wx.EVT_BUTTON, self.on_press)
+
+        flex_grid.AddMany([save_to_label, (dir_picker, 1, wx.EXPAND),
+                           save_button])
+        flex_grid.AddGrowableRow(5, 1)
+        flex_grid.AddGrowableCol(1, 1)
+
+        hbox.Add(flex_grid, proportion=2, flag=wx.ALL | wx.EXPAND, border=15)
+        self.SetSizer(hbox)
 
     def on_press(self, event):
-        print(self.file_path)
-        # from to_excel import Excel
-        # Excel().print_path(self.file_path)
+        from to_excel import Excel
+        # Excel(self.file_path, '123456A')
 
     def on_pick_dir(self, event):
         self.file_path = event.GetPath()

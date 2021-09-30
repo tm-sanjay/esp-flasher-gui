@@ -6,6 +6,7 @@ import sys
 import os
 from config_file import FlashConfig
 from serial.tools import list_ports
+from to_excel import Excel
 
 DEVNULL = open(os.devnull, 'w')
 
@@ -78,21 +79,21 @@ class EspToolThread(threading.Thread):
                          "--flash_mode", self._config.mode,
                          "0x00000", self._config.firmware_path])
 
-            if self._config.erase_flash:
+            if self._config.erase_flash == "Yes":
                 argv.append('--erase-all')
             print(argv)
             print("Command: esptool.py %s\n" % " ".join(argv))
 
-            # esptool.main(argv)
+            esptool.main(argv)
 
         except Exception as e:
             print("Unexpected error: {}".format(e))
             raise e
 
-    # def read_mac(self):
-    #     # read mac and update to UI
-    #     self.mac = esptool_read_mac(self._config.port)
-    #     wx.CallAfter(self.txt_ctrl.SetValue, self.mac)
+    def read_mac(self):
+        # read mac and update to UI
+        self.mac = esptool_read_mac(self._config.port)
+        wx.CallAfter(self.txt_ctrl.SetValue, self.mac)
 
 
 #
@@ -107,6 +108,7 @@ class MyPanel(wx.Panel):
         super(MyPanel, self).__init__(parent)
 
         self._config = FlashConfig.load()
+        self.auto_save_state = False
 
         # labels
         port_label = wx.StaticText(self, label='Serial Port')
@@ -144,12 +146,12 @@ class MyPanel(wx.Panel):
         auto_save_checkbox = wx.CheckBox(self, label="Auto Save")
         auto_save_checkbox.Bind(wx.EVT_CHECKBOX, self.on_auto_save)
 
-        save_button = wx.Button(self, label="Save")
-        save_button.Bind(wx.EVT_BUTTON, self.on_save)
+        self.save_button = wx.Button(self, label="Save")
+        self.save_button.Bind(wx.EVT_BUTTON, self.on_save)
 
         excel_boxsizer = wx.BoxSizer(wx.HORIZONTAL)
         excel_boxsizer.Add(auto_save_checkbox)
-        excel_boxsizer.Add(save_button)
+        excel_boxsizer.Add(self.save_button)
 
         flex_grid.AddMany([port_label, (serial_boxsizer, 1, wx.EXPAND),
                            file_label, (file_picker, 1, wx.EXPAND),
@@ -211,11 +213,29 @@ class MyPanel(wx.Panel):
             ports.append(port)
         return ports
 
+    # saves data to excel whenever firmware is uploaded
     def on_auto_save(self, event):
         print("on auto save")
+        cb = event.GetEventObject()
+        self.auto_save_state = cb.GetValue()
+        print(self.auto_save_state)
+        self.save_state(not self.auto_save_state)
 
+    # saves data to exel only when save is pressed
     def on_save(self, event):
         print("on save")
+        self.save_to_excel()
+
+    def save_state(self, state):
+        # allow save-button only if auto-save is off
+        if self.auto_save_state is True:
+            self.save_button.Disable()
+        else:
+            self.save_button.Enable(state)
+
+    def save_to_excel(self):
+        print("save to excel")
+        Excel().save_data(mac_id=MyPanel.mac_address, file_name=MyPanel.filename)
 
 
 class SettingsTab(wx.Panel):
@@ -298,9 +318,10 @@ class SettingsTab(wx.Panel):
 
 
 class ExeclTab(wx.Panel):
+    output_file_path = ""
+
     def __init__(self, parent):
         wx.Panel.__init__(self, parent)
-        self.output_file_path = ""
 
         hbox = wx.BoxSizer(wx.HORIZONTAL)
 
@@ -322,8 +343,8 @@ class ExeclTab(wx.Panel):
         self.SetSizer(hbox)
 
     def on_save(self, event):
-        from to_excel import Excel
-        # Excel(path=self.output_file_path, mac_id=MyPanel.mac_address, file_name=MyPanel.filename)
+        print("Saved")
+        Excel().set_output_path(self.output_file_path)
 
     def on_pick_dir(self, event):
         self.output_file_path = event.GetPath()

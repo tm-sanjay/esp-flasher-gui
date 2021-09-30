@@ -118,7 +118,6 @@ class MyPanel(wx.Panel):
 
         self.choice = wx.Choice(self, choices=self._get_serial_ports())
         self.choice.Bind(wx.EVT_CHOICE, self.on_select_port)
-        # self._select_configured_port()
 
         reload_button = wx.Button(self, label="Reload")
         reload_button.Bind(wx.EVT_BUTTON, self.on_reload)
@@ -139,11 +138,24 @@ class MyPanel(wx.Panel):
 
         self.mac_text_ctrl = wx.TextCtrl(self, value='MAC address', style=wx.TE_READONLY)
         empty_label = wx.StaticText(self, label='')
+        
+        save_to_label = wx.StaticText(self, label='Save to Excel')
+
+        auto_save_checkbox = wx.CheckBox(self, label="Auto Save")
+        auto_save_checkbox.Bind(wx.EVT_CHECKBOX, self.on_auto_save)
+
+        save_button = wx.Button(self, label="Save")
+        save_button.Bind(wx.EVT_BUTTON, self.on_save)
+
+        excel_boxsizer = wx.BoxSizer(wx.HORIZONTAL)
+        excel_boxsizer.Add(auto_save_checkbox)
+        excel_boxsizer.Add(save_button)
 
         flex_grid.AddMany([port_label, (serial_boxsizer, 1, wx.EXPAND),
                            file_label, (file_picker, 1, wx.EXPAND),
                            (read_mac_button, 1, wx.EXPAND), (self.mac_text_ctrl, 1, wx.EXPAND),
-                           (empty_label, 1, wx.EXPAND), (upload_button, 1, wx.EXPAND)])
+                           (empty_label, 1, wx.EXPAND), (upload_button, 1, wx.EXPAND),
+                           (save_to_label, 1, wx.EXPAND), (excel_boxsizer, wx.EXPAND)])
         flex_grid.AddGrowableRow(5, 1)
         flex_grid.AddGrowableCol(1, 1)
 
@@ -198,6 +210,12 @@ class MyPanel(wx.Panel):
         for port, desc, hwid in sorted(list_ports.comports()):
             ports.append(port)
         return ports
+
+    def on_auto_save(self, event):
+        print("on auto save")
+
+    def on_save(self, event):
+        print("on save")
 
 
 class SettingsTab(wx.Panel):
@@ -282,7 +300,7 @@ class SettingsTab(wx.Panel):
 class ExeclTab(wx.Panel):
     def __init__(self, parent):
         wx.Panel.__init__(self, parent)
-        self.file_path = ""
+        self.output_file_path = ""
 
         hbox = wx.BoxSizer(wx.HORIZONTAL)
 
@@ -292,8 +310,8 @@ class ExeclTab(wx.Panel):
         dir_picker = wx.DirPickerCtrl(self, style=wx.FLP_USE_TEXTCTRL)
         dir_picker.Bind(wx.EVT_DIRPICKER_CHANGED, self.on_pick_dir)
 
-        save_button = wx.Button(self, label="press", pos=(20, 30))
-        save_button.Bind(wx.EVT_BUTTON, self.on_press)
+        save_button = wx.Button(self, label="Save", pos=(20, 30))
+        save_button.Bind(wx.EVT_BUTTON, self.on_save)
 
         flex_grid.AddMany([save_to_label, (dir_picker, 1, wx.EXPAND),
                            save_button])
@@ -303,13 +321,13 @@ class ExeclTab(wx.Panel):
         hbox.Add(flex_grid, proportion=2, flag=wx.ALL | wx.EXPAND, border=15)
         self.SetSizer(hbox)
 
-    def on_press(self, event):
+    def on_save(self, event):
         from to_excel import Excel
-        # Excel(path=self.file_path, mac_id=MyPanel.mac_address, file_name=MyPanel.filename)
+        # Excel(path=self.output_file_path, mac_id=MyPanel.mac_address, file_name=MyPanel.filename)
 
     def on_pick_dir(self, event):
-        self.file_path = event.GetPath()
-        print(f'path: {self.file_path}')
+        self.output_file_path = event.GetPath()
+        print(f'path: {self.output_file_path}')
 
 
 class EspFlasher(wx.Frame):

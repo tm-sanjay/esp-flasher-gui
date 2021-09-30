@@ -11,6 +11,7 @@ DEVNULL = open(os.devnull, 'w')
 
 __version__ = "0.0.3"
 __auto_select__ = "Auto-select"
+# TODO: auto-detect serial port(refer pyserial)
 
 
 class Espflasher(Exception):
@@ -71,9 +72,9 @@ class EspToolThread(threading.Thread):
         try:
             # self.read_mac()
             argv = ["--port", self._config.port]
-            argv.extend(['--baud', str(self._config.baud)])
-            argv.extend(['--after', 'hard_reset', 'write_flash'])
-            argv.extend(["--flash_size", "detect",
+            argv.extend(["--baud", str(self._config.baud),
+                         "--after", "hard_reset", "write_flash",
+                         "--flash_size", "detect",
                          "--flash_mode", self._config.mode,
                          "0x00000", self._config.firmware_path])
 
@@ -82,16 +83,16 @@ class EspToolThread(threading.Thread):
             print(argv)
             print("Command: esptool.py %s\n" % " ".join(argv))
 
-            esptool.main(argv)
+            # esptool.main(argv)
 
         except Exception as e:
             print("Unexpected error: {}".format(e))
             raise e
 
-    def read_mac(self):
-        # read mac and update to UI
-        self.mac = esptool_read_mac(self._config.port)
-        wx.CallAfter(self.txt_ctrl.SetValue, self.mac)
+    # def read_mac(self):
+    #     # read mac and update to UI
+    #     self.mac = esptool_read_mac(self._config.port)
+    #     wx.CallAfter(self.txt_ctrl.SetValue, self.mac)
 
 
 #
@@ -99,6 +100,9 @@ class EspToolThread(threading.Thread):
 # GUI
 
 class MyPanel(wx.Panel):
+    filename = ''
+    mac_address = ''
+
     def __init__(self, parent):
         super(MyPanel, self).__init__(parent)
 
@@ -155,6 +159,7 @@ class MyPanel(wx.Panel):
             self.mac_text_ctrl.SetValue("")
             mac_add = esptool_read_mac(self._config.port)
             self.mac_text_ctrl.SetValue(mac_add)
+            MyPanel.mac_address = mac_add
             # wx.MessageBox("Please reconnect the device or restart the App !", caption="Reconnect", style=wx.OK |
             # wx.ICON_WARNING)
 
@@ -175,6 +180,8 @@ class MyPanel(wx.Panel):
     def on_pick_file(self, event):
         self._config.firmware_path = event.GetPath().replace("'", "")
         print('Firmware path: ' + self._config.firmware_path)
+        MyPanel.filename = os.path.basename(self._config.firmware_path)
+        print(MyPanel.filename)
 
     def on_select_port(self, event):
         choice = event.GetEventObject()
@@ -187,7 +194,7 @@ class MyPanel(wx.Panel):
 
     @staticmethod
     def _get_serial_ports():
-        ports = [__auto_select__]
+        ports = []
         for port, desc, hwid in sorted(list_ports.comports()):
             ports.append(port)
         return ports
@@ -298,7 +305,7 @@ class ExeclTab(wx.Panel):
 
     def on_press(self, event):
         from to_excel import Excel
-        # Excel(self.file_path, '123456A')
+        # Excel(path=self.file_path, mac_id=MyPanel.mac_address, file_name=MyPanel.filename)
 
     def on_pick_dir(self, event):
         self.file_path = event.GetPath()

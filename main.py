@@ -96,9 +96,31 @@ class EspToolThread(threading.Thread):
         wx.CallAfter(self.txt_ctrl.SetValue, self.mac)
 
 
+class RedirectText:
+    def __init__(self, text_ctrl):
+        self.__out = text_ctrl
+
+    def write(self, string):
+        if string.startswith("\r"):
+            current_value = self.__out.GetValue()
+            last_newline = current_value.rfind("\n")
+            new_value = current_value[:last_newline + 1]  # preserve \n
+            new_value += string[1:]  # chop off leading \r
+            wx.CallAfter(self.__out.SetValue, new_value)
+        else:
+            wx.CallAfter(self.__out.AppendText, string)
+
+    def flush(self):
+        # noinspection PyStatementEffect
+        None
+
+    def isatty(self):
+        return True
+
 #
 # --------------------------------------------------
 # GUI
+
 
 class MyPanel(wx.Panel):
     filename = ''
@@ -114,9 +136,9 @@ class MyPanel(wx.Panel):
         port_label = wx.StaticText(self, label='Serial Port')
         file_label = wx.StaticText(self, label='Firmware file')
 
-        hbox = wx.BoxSizer(wx.HORIZONTAL)
+        hbox = wx.BoxSizer(wx.VERTICAL)
 
-        flex_grid = wx.FlexGridSizer(6, 2, 10, 10)
+        flex_grid = wx.FlexGridSizer(5, 2, 10, 10)
 
         self.choice = wx.Choice(self, choices=self._get_serial_ports())
         self.choice.Bind(wx.EVT_CHOICE, self.on_select_port)
@@ -140,7 +162,18 @@ class MyPanel(wx.Panel):
 
         self.mac_text_ctrl = wx.TextCtrl(self, value='MAC address', style=wx.TE_READONLY)
         empty_label = wx.StaticText(self, label='')
-        
+
+        console_label = wx.StaticText(self, label="Console")
+
+        self.console_ctrl = wx.TextCtrl(self, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.HSCROLL)
+        self.console_ctrl.SetFont(wx.Font((0, 13), wx.FONTFAMILY_TELETYPE, wx.FONTSTYLE_NORMAL,
+                                          wx.FONTWEIGHT_NORMAL))
+        self.console_ctrl.SetBackgroundColour(wx.WHITE)
+        self.console_ctrl.SetForegroundColour(wx.BLUE)
+        self.console_ctrl.SetDefaultStyle(wx.TextAttr(wx.BLUE))
+
+        sys.stdout = RedirectText(self.console_ctrl)
+
         save_to_label = wx.StaticText(self, label='Save to Excel')
 
         auto_save_checkbox = wx.CheckBox(self, label="Auto Save")
@@ -149,19 +182,23 @@ class MyPanel(wx.Panel):
         self.save_button = wx.Button(self, label="Save")
         self.save_button.Bind(wx.EVT_BUTTON, self.on_save)
 
-        excel_boxsizer = wx.BoxSizer(wx.HORIZONTAL)
-        excel_boxsizer.Add(auto_save_checkbox)
-        excel_boxsizer.Add(self.save_button)
+        # excel_boxsizer = wx.BoxSizer(wx.HORIZONTAL)
+        # excel_boxsizer.Add(auto_save_checkbox)
+        # excel_boxsizer.Add(self.save_button)
 
         flex_grid.AddMany([port_label, (serial_boxsizer, 1, wx.EXPAND),
                            file_label, (file_picker, 1, wx.EXPAND),
-                           (read_mac_button, 1, wx.EXPAND), (self.mac_text_ctrl, 1, wx.EXPAND),
+                           (read_mac_button, 1, wx.EXPAND), (self.mac_text_ctrl),
                            (empty_label, 1, wx.EXPAND), (upload_button, 1, wx.EXPAND),
-                           (save_to_label, 1, wx.EXPAND), (excel_boxsizer, wx.EXPAND)])
-        flex_grid.AddGrowableRow(5, 1)
+                           (console_label, 1, wx.EXPAND), (self.console_ctrl, 1, wx.EXPAND)])
+        flex_grid.AddGrowableRow(4, 1)
         flex_grid.AddGrowableCol(1, 1)
-
         hbox.Add(flex_grid, proportion=2, flag=wx.ALL | wx.EXPAND, border=15)
+
+        grid_sizer = wx.GridSizer(1, 3, 10, 10)
+        grid_sizer.AddMany([save_to_label, auto_save_checkbox, self.save_button])
+        hbox.Add(grid_sizer, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM | wx.EXPAND, 15)
+
         self.SetSizer(hbox)
 
     def on_read_mac(self, event=None):
@@ -188,6 +225,7 @@ class MyPanel(wx.Panel):
             print('Uploading...')
             print(self._config.port + ', ' + str(self._config.baud) + ", " + self._config.firmware_path)
             self.on_read_mac()
+            self.console_ctrl.SetValue("")
             worker = EspToolThread(self, self._config, self.mac_text_ctrl)
             worker.start()
 
@@ -218,7 +256,6 @@ class MyPanel(wx.Panel):
         print("on auto save")
         cb = event.GetEventObject()
         self.auto_save_state = cb.GetValue()
-        print(self.auto_save_state)
         self.save_state(not self.auto_save_state)
 
     # saves data to exel only when save is pressed
@@ -353,10 +390,12 @@ class ExeclTab(wx.Panel):
 
 class EspFlasher(wx.Frame):
     def __init__(self, parent, title):
-        super(EspFlasher, self).__init__(parent, title=title, size=(500, 400))
+        super(EspFlasher, self).__init__(parent, title=title, size=(550, 550))
         # style=wx.DEFAULT_FRAME_STYLE | wx.NO_FULL_REPAINT_ON_RESIZE
+        self.SetMinSize(size=(460, 400))
         self.locale = wx.Locale(wx.LANGUAGE_ENGLISH)
 
+        self.Center(wx.BOTH)
         notebook = wx.Notebook(self)
 
         tab1 = MyPanel(notebook)

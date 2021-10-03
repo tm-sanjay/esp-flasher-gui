@@ -1,18 +1,18 @@
-import json
 import wx
 import esptool
 import threading
 import serial
 import sys
 import os
+from config_file import FlashConfig
 from serial.tools import list_ports
+from to_excel import Excel
 
 DEVNULL = open(os.devnull, 'w')
 
-__version__ = "0.0.1"
-
-main_port = None
-mac = None
+__version__ = "0.0.3"
+__auto_select__ = "Auto-select"
+# TODO: auto-detect serial port(refer pyserial)
 
 
 class Espflasher(Exception):
@@ -73,13 +73,13 @@ class EspToolThread(threading.Thread):
         try:
             # self.read_mac()
             argv = ["--port", self._config.port]
-            argv.extend(['--baud', str(self._config.baud)])
-            argv.extend(['--after', 'hard_reset', 'write_flash'])
-            argv.extend(["--flash_size", "detect",
+            argv.extend(["--baud", str(self._config.baud),
+                         "--after", "hard_reset", "write_flash",
+                         "--flash_size", "detect",
                          "--flash_mode", self._config.mode,
                          "0x00000", self._config.firmware_path])
 
-            if self._config.erase_flash:
+            if self._config.erase_flash == "Yes":
                 argv.append('--erase-all')
             print(argv)
             print("Command: esptool.py %s\n" % " ".join(argv))
@@ -96,60 +96,52 @@ class EspToolThread(threading.Thread):
         wx.CallAfter(self.txt_ctrl.SetValue, self.mac)
 
 
-class FlashConfig:
-    def __init__(self):
-        self.baud = 921600
-        self.port = None
-        self.firmware_path = None
-        self.mode = 'dio'
-        self.erase_flash = 'No'
+class RedirectText:
+    def __init__(self, text_ctrl):
+        self.__out = text_ctrl
 
-    @classmethod
-    def load(cls, file_path):
-        print(file_path)
-        conf = cls()
-        if os.path.exists(file_path):
-            with open(file_path, 'r') as f:
-                data = json.load(f)
-            conf.port = data['port']
-            conf.baud = data['baud']
-            conf.mode = data['mode']
-            conf.erase_flash = data['erase']
-        return conf
+    def write(self, string):
+        if string.startswith("\r"):
+            current_value = self.__out.GetValue()
+            last_newline = current_value.rfind("\n")
+            new_value = current_value[:last_newline + 1]  # preserve \n
+            new_value += string[1:]  # chop off leading \r
+            wx.CallAfter(self.__out.SetValue, new_value)
+        else:
+            wx.CallAfter(self.__out.AppendText, string)
 
-    def save(self, file_path):
-        print(file_path)
-        date = {
-            'baud': self.baud,
-            'port': self.port,
-            'mode': self.mode,
-            'erase': self.erase_flash
-        }
-        with open(file_path, 'w') as f:
-            json.dump(date, f)
+    def flush(self):
+        # noinspection PyStatementEffect
+        None
 
+    def isatty(self):
+        return True
 
 #
 # --------------------------------------------------
 # GUI
 
+
 class MyPanel(wx.Panel):
+    filename = ''
+    mac_address = ''
+
     def __init__(self, parent):
         super(MyPanel, self).__init__(parent)
 
-        self._config = FlashConfig.load(get_config_file_path())
+        self._config = FlashConfig.load()
+        self.auto_save_state = False
 
         # labels
         port_label = wx.StaticText(self, label='Serial Port')
         file_label = wx.StaticText(self, label='Firmware file')
 
-        hbox = wx.BoxSizer(wx.HORIZONTAL)
+        hbox = wx.BoxSizer(wx.VERTICAL)
 
-        flex_grid = wx.FlexGridSizer(6, 2, 10, 10)
+        flex_grid = wx.FlexGridSizer(5, 2, 10, 10)
 
         self.choice = wx.Choice(self, choices=self._get_serial_ports())
         self.choice.Bind(wx.EVT_CHOICE, self.on_select_port)
-        # self._select_configured_port()
 
         reload_button = wx.Button(self, label="Reload")
         reload_button.Bind(wx.EVT_BUTTON, self.on_reload)
@@ -171,14 +163,38 @@ class MyPanel(wx.Panel):
         self.mac_text_ctrl = wx.TextCtrl(self, value='MAC address', style=wx.TE_READONLY)
         empty_label = wx.StaticText(self, label='')
 
+        console_label = wx.StaticText(self, label="Console")
+
+        self.console_ctrl = wx.TextCtrl(self, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.HSCROLL)
+        self.console_ctrl.SetFont(wx.Font((0, 13), wx.FONTFAMILY_TELETYPE, wx.FONTSTYLE_NORMAL,
+                                          wx.FONTWEIGHT_NORMAL))
+        self.console_ctrl.SetBackgroundColour(wx.WHITE)
+        self.console_ctrl.SetForegroundColour(wx.BLUE)
+        self.console_ctrl.SetDefaultStyle(wx.TextAttr(wx.BLUE))
+
+        sys.stdout = RedirectText(self.console_ctrl)
+
+        save_to_label = wx.StaticText(self, label='Save to Excel')
+
+        auto_save_checkbox = wx.CheckBox(self, label="Auto Save")
+        auto_save_checkbox.Bind(wx.EVT_CHECKBOX, self.on_auto_save)
+
+        self.save_button = wx.Button(self, label="Save")
+        self.save_button.Bind(wx.EVT_BUTTON, self.on_save)
+
         flex_grid.AddMany([port_label, (serial_boxsizer, 1, wx.EXPAND),
                            file_label, (file_picker, 1, wx.EXPAND),
-                           (read_mac_button, 1, wx.EXPAND), (self.mac_text_ctrl, 1, wx.EXPAND),
-                           (empty_label, 1, wx.EXPAND), (upload_button, 1, wx.EXPAND)])
-        flex_grid.AddGrowableRow(5, 1)
+                           (read_mac_button, 1, wx.EXPAND), self.mac_text_ctrl,
+                           (empty_label, 1, wx.EXPAND), (upload_button, 1, wx.EXPAND),
+                           (console_label, 1, wx.EXPAND), (self.console_ctrl, 1, wx.EXPAND)])
+        flex_grid.AddGrowableRow(4, 1)
         flex_grid.AddGrowableCol(1, 1)
-
         hbox.Add(flex_grid, proportion=2, flag=wx.ALL | wx.EXPAND, border=15)
+
+        grid_sizer = wx.GridSizer(1, 3, 10, 10)
+        grid_sizer.AddMany([save_to_label, auto_save_checkbox, self.save_button])
+        hbox.Add(grid_sizer, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM | wx.EXPAND, 15)
+
         self.SetSizer(hbox)
 
     def on_read_mac(self, event=None):
@@ -190,6 +206,7 @@ class MyPanel(wx.Panel):
             self.mac_text_ctrl.SetValue("")
             mac_add = esptool_read_mac(self._config.port)
             self.mac_text_ctrl.SetValue(mac_add)
+            MyPanel.mac_address = mac_add
             # wx.MessageBox("Please reconnect the device or restart the App !", caption="Reconnect", style=wx.OK |
             # wx.ICON_WARNING)
 
@@ -204,12 +221,18 @@ class MyPanel(wx.Panel):
             print('Uploading...')
             print(self._config.port + ', ' + str(self._config.baud) + ", " + self._config.firmware_path)
             self.on_read_mac()
+            self.console_ctrl.SetValue("")
             worker = EspToolThread(self, self._config, self.mac_text_ctrl)
             worker.start()
+            # worker.join()
+            if self.auto_save_state:
+                self.save_to_excel()
 
     def on_pick_file(self, event):
         self._config.firmware_path = event.GetPath().replace("'", "")
         print('Firmware path: ' + self._config.firmware_path)
+        MyPanel.filename = os.path.basename(self._config.firmware_path)
+        print(MyPanel.filename)
 
     def on_select_port(self, event):
         choice = event.GetEventObject()
@@ -222,17 +245,40 @@ class MyPanel(wx.Panel):
 
     @staticmethod
     def _get_serial_ports():
-        ports = ["com1", "com2"]
+        ports = []
         for port, desc, hwid in sorted(list_ports.comports()):
             ports.append(port)
         return ports
+
+    # saves data to excel whenever firmware is uploaded
+    def on_auto_save(self, event):
+        print("on auto save")
+        cb = event.GetEventObject()
+        self.auto_save_state = cb.GetValue()
+        self.save_state(not self.auto_save_state)
+
+    # saves data to exel only when save is pressed
+    def on_save(self, event):
+        print("on save")
+        self.save_to_excel()
+
+    def save_state(self, state):
+        # allow save-button only if auto-save is off
+        if self.auto_save_state is True:
+            self.save_button.Disable()
+        else:
+            self.save_button.Enable(state)
+
+    def save_to_excel(self):
+        print("save to excel")
+        Excel().save_data(mac_id=MyPanel.mac_address, file_name=MyPanel.filename)
 
 
 class SettingsTab(wx.Panel):
     def __init__(self, parent):
         wx.Panel.__init__(self, parent)
 
-        self._config = FlashConfig.load(get_config_file_path())
+        self._config = FlashConfig.load()
 
         hbox = wx.BoxSizer(wx.HORIZONTAL)
 
@@ -304,31 +350,60 @@ class SettingsTab(wx.Panel):
     def on_save(self, event):
         print(f'mode:{self._config.mode}, baud rate:{self._config.baud},'
               f'erase:{self._config.erase_flash}')
-        self._config.save(get_config_file_path())
+        self._config.save()
 
 
-class ExelTab(wx.Panel):
+class ExeclTab(wx.Panel):
+    output_file_path = ""
+
     def __init__(self, parent):
         wx.Panel.__init__(self, parent)
 
-        wx.StaticText(self, -1, "This is the Exel Tab", (20, 20))
+        hbox = wx.BoxSizer(wx.HORIZONTAL)
+
+        flex_grid = wx.FlexGridSizer(6, 2, 10, 10)
+
+        save_to_label = wx.StaticText(self, label="File Destination")
+        dir_picker = wx.DirPickerCtrl(self, style=wx.FLP_USE_TEXTCTRL)
+        dir_picker.Bind(wx.EVT_DIRPICKER_CHANGED, self.on_pick_dir)
+
+        save_button = wx.Button(self, label="Save", pos=(20, 30))
+        save_button.Bind(wx.EVT_BUTTON, self.on_save)
+
+        flex_grid.AddMany([save_to_label, (dir_picker, 1, wx.EXPAND),
+                           save_button])
+        flex_grid.AddGrowableRow(5, 1)
+        flex_grid.AddGrowableCol(1, 1)
+
+        hbox.Add(flex_grid, proportion=2, flag=wx.ALL | wx.EXPAND, border=15)
+        self.SetSizer(hbox)
+
+    def on_save(self, event):
+        print("Saved")
+        Excel().set_output_path(self.output_file_path)
+
+    def on_pick_dir(self, event):
+        self.output_file_path = event.GetPath()
+        print(f'path: {self.output_file_path}')
 
 
 class EspFlasher(wx.Frame):
     def __init__(self, parent, title):
-        super(EspFlasher, self).__init__(parent, title=title, size=(500, 400))
+        super(EspFlasher, self).__init__(parent, title=title, size=(550, 550))
         # style=wx.DEFAULT_FRAME_STYLE | wx.NO_FULL_REPAINT_ON_RESIZE
+        self.SetMinSize(size=(460, 400))
         self.locale = wx.Locale(wx.LANGUAGE_ENGLISH)
 
+        self.Center(wx.BOTH)
         notebook = wx.Notebook(self)
 
         tab1 = MyPanel(notebook)
         tab2 = SettingsTab(notebook)
-        tab3 = ExelTab(notebook)
+        tab3 = ExeclTab(notebook)
 
         notebook.AddPage(tab1, "Main")
         notebook.AddPage(tab2, "Settings")
-        notebook.AddPage(tab3, "Exel")
+        notebook.AddPage(tab3, "Execl")
 
         # self.panel = MyPanel(self)
         # self._menu_bar()
@@ -357,10 +432,6 @@ class EspFlasher(wx.Frame):
 
     def _on_settings(self, event):
         self.Close()
-
-
-def get_config_file_path():
-    return wx.StandardPaths.Get().GetUserConfigDir() + "/esp-flasher-gui.json"
 
 
 class MyApp(wx.App):

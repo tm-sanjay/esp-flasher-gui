@@ -182,13 +182,9 @@ class MyPanel(wx.Panel):
         self.save_button = wx.Button(self, label="Save")
         self.save_button.Bind(wx.EVT_BUTTON, self.on_save)
 
-        # excel_boxsizer = wx.BoxSizer(wx.HORIZONTAL)
-        # excel_boxsizer.Add(auto_save_checkbox)
-        # excel_boxsizer.Add(self.save_button)
-
         flex_grid.AddMany([port_label, (serial_boxsizer, 1, wx.EXPAND),
                            file_label, (file_picker, 1, wx.EXPAND),
-                           (read_mac_button, 1, wx.EXPAND), (self.mac_text_ctrl),
+                           (read_mac_button, 1, wx.EXPAND), self.mac_text_ctrl,
                            (empty_label, 1, wx.EXPAND), (upload_button, 1, wx.EXPAND),
                            (console_label, 1, wx.EXPAND), (self.console_ctrl, 1, wx.EXPAND)])
         flex_grid.AddGrowableRow(4, 1)
@@ -228,6 +224,9 @@ class MyPanel(wx.Panel):
             self.console_ctrl.SetValue("")
             worker = EspToolThread(self, self._config, self.mac_text_ctrl)
             worker.start()
+            # worker.join()
+            if self.auto_save_state:
+                self.save_to_excel()
 
     def on_pick_file(self, event):
         self._config.firmware_path = event.GetPath().replace("'", "")

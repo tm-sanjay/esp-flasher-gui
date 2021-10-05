@@ -81,7 +81,6 @@ class EspToolThread(threading.Thread):
 
             if self._config.erase_flash == "Yes":
                 argv.append('--erase-all')
-            print(argv)
             print("Command: esptool.py %s\n" % " ".join(argv))
 
             esptool.main(argv)
@@ -101,6 +100,12 @@ class RedirectText:
         self.__out = text_ctrl
 
     def write(self, string):
+        if string.startswith("\rWriting at"):
+            current_value = string[-6:-3]
+            import re
+            percentage = re.findall(r"\d+", current_value)
+            MyPanel.on_progress(percentage[0])
+
         if string.startswith("\r"):
             current_value = self.__out.GetValue()
             last_newline = current_value.rfind("\n")
@@ -125,6 +130,8 @@ class RedirectText:
 class MyPanel(wx.Panel):
     filename = ''
     mac_address = ''
+    gauge = None
+    upload_status_label = None
 
     def __init__(self, parent):
         super(MyPanel, self).__init__(parent)
@@ -161,6 +168,20 @@ class MyPanel(wx.Panel):
         read_mac_button.Bind(wx.EVT_BUTTON, self.on_read_mac)
 
         self.mac_text_ctrl = wx.TextCtrl(self, value='MAC address', style=wx.TE_READONLY)
+
+        MyPanel.gauge = wx.Gauge(self, range=100, size=(250, 20), style=wx.GA_HORIZONTAL)
+        MyPanel.upload_status_label = wx.StaticText(self, label='')
+        MyPanel.upload_status_label.SetForegroundColour((0, 175, 0))
+
+        progress_hbox = wx.BoxSizer(wx.HORIZONTAL)
+        progress_hbox.Add(MyPanel.upload_status_label, 0, wx.ALL | wx.EXPAND, 5)
+        progress_hbox.Add(MyPanel.gauge, 1, wx.EXPAND)
+
+        mac_progress_hbox = wx.BoxSizer(wx.HORIZONTAL)
+        mac_progress_hbox.Add(self.mac_text_ctrl)
+        mac_progress_hbox.Add(25, 0)
+        mac_progress_hbox.Add(progress_hbox, 1, wx.EXPAND)
+
         empty_label = wx.StaticText(self, label='')
 
         console_label = wx.StaticText(self, label="Console")
@@ -184,7 +205,7 @@ class MyPanel(wx.Panel):
 
         flex_grid.AddMany([port_label, (serial_boxsizer, 1, wx.EXPAND),
                            file_label, (file_picker, 1, wx.EXPAND),
-                           (read_mac_button, 1, wx.EXPAND), self.mac_text_ctrl,
+                           (read_mac_button, 1, wx.EXPAND), (mac_progress_hbox, 1, wx.EXPAND),
                            (empty_label, 1, wx.EXPAND), (upload_button, 1, wx.EXPAND),
                            (console_label, 1, wx.EXPAND), (self.console_ctrl, 1, wx.EXPAND)])
         flex_grid.AddGrowableRow(4, 1)
@@ -211,6 +232,8 @@ class MyPanel(wx.Panel):
             # wx.ICON_WARNING)
 
     def on_upload(self, event):
+        MyPanel.gauge.Show()
+        MyPanel.upload_status_label.Hide()
         if self._config.port is None:
             print("no port selected")
             wx.MessageBox("No Port Selected !", caption="Select Port", style=wx.OK | wx.ICON_ERROR)
@@ -273,6 +296,16 @@ class MyPanel(wx.Panel):
         print("save to excel")
         Excel().save_data(mac_id=MyPanel.mac_address, file_name=MyPanel.filename)
 
+    @staticmethod
+    def on_progress(value):
+        MyPanel.gauge.SetValue(int(value))
+        if int(value) == 100:
+            import time
+            time.sleep(1)
+            MyPanel.gauge.Hide()
+            MyPanel.gauge.SetValue(0)
+            MyPanel.upload_status_label.Show()
+            MyPanel.upload_status_label.SetLabel("Done Uploading")
 
 class SettingsTab(wx.Panel):
     def __init__(self, parent):

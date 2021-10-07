@@ -56,7 +56,12 @@ def esptool_read_mac(port):
     chip = detect_chip(port)
     mac_address = (':'.join('{:02X}'.format(x) for x in read_chip_property(chip.read_mac)))
     print(f'MAC - {mac_address}')
-    return mac_address
+    return mac_address.lower()
+
+
+def save_to_excel():
+    print("\nsaved to excel")
+    Excel().save_data(mac_id=MyPanel.mac_address, file_name=MyPanel.filename)
 
 
 class EspToolThread(threading.Thread):
@@ -202,6 +207,7 @@ class MyPanel(wx.Panel):
 
         self.save_button = wx.Button(self, label="Save")
         self.save_button.Bind(wx.EVT_BUTTON, self.on_save)
+        self.save_button.Disable()
 
         flex_grid.AddMany([port_label, (serial_boxsizer, 1, wx.EXPAND),
                            file_label, (file_picker, 1, wx.EXPAND),
@@ -248,8 +254,9 @@ class MyPanel(wx.Panel):
             worker = EspToolThread(self, self._config, self.mac_text_ctrl)
             worker.start()
             # worker.join()
+            self.save_button_state(True)
             if self.auto_save_state:
-                self.save_to_excel()
+                save_to_excel()
 
     def on_pick_file(self, event):
         self._config.firmware_path = event.GetPath().replace("'", "")
@@ -278,23 +285,20 @@ class MyPanel(wx.Panel):
         print("on auto save")
         cb = event.GetEventObject()
         self.auto_save_state = cb.GetValue()
-        self.save_state(not self.auto_save_state)
+        # self.save_button_state(not self.auto_save_state)
 
     # saves data to exel only when save is pressed
     def on_save(self, event):
         print("on save")
-        self.save_to_excel()
+        save_to_excel()
+        self.save_button_state(False)
 
-    def save_state(self, state):
+    def save_button_state(self, state):
         # allow save-button only if auto-save is off
         if self.auto_save_state is True:
             self.save_button.Disable()
         else:
             self.save_button.Enable(state)
-
-    def save_to_excel(self):
-        print("save to excel")
-        Excel().save_data(mac_id=MyPanel.mac_address, file_name=MyPanel.filename)
 
     @staticmethod
     def on_progress(value):

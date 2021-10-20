@@ -10,7 +10,7 @@ from to_excel import Excel
 
 DEVNULL = open(os.devnull, 'w')
 
-__version__ = "0.0.3"
+__version__ = "0.0.4"
 __auto_select__ = "Auto-select"
 # TODO: auto-detect serial port(refer pyserial)
 
@@ -243,7 +243,7 @@ class MyPanel(wx.Panel):
         if self._config.port is None:
             print("no port selected")
             wx.MessageBox("No Port Selected !", caption="Select Port", style=wx.OK | wx.ICON_ERROR)
-        elif self._config.firmware_path == "":
+        elif self._config.firmware_path is None:
             print('no file is selected')
             wx.MessageBox("No file is selected !", caption="Select Firmware", style=wx.OK | wx.ICON_ERROR)
         else:

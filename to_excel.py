@@ -6,6 +6,7 @@ from datetime import date
 
 class Excel:
     path = 'output.xlsx'
+    saved_data = ''
 
     def __init__(self):
         self.db = xl.Database()
@@ -50,5 +51,6 @@ class Excel:
 
         # write out the db
         xl.writexl(db=self.db, fn=Excel.path)
-        print(f"saved: {mac_id},{self.date}")
+        Excel.saved_data = f"{self._config.row_id - 2}, {mac_id}, {self.date}"
+        print(f"\nExcel-saved: {Excel.saved_data}")
         self._config.save()
